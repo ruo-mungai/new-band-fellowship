@@ -1,0 +1,329 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  GUEST
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum RequestStatus {
+  PENDING
+  SCHEDULED
+  SUNG
+  REJECTED
+}
+
+enum SessionType {
+  FIRST_SESSION
+  SECOND_SESSION
+  REQUEST_TIME
+  TESTIMONY_TIME
+}
+
+model User {
+  id             String         @id @default(cuid())
+  email          String         @unique
+  password       String
+  firstName      String
+  lastName       String
+  phone          String?
+  profileImage   String?
+  role           Role           @default(USER)
+  isApproved     Boolean        @default(false)
+  isBanned       Boolean        @default(false)
+  refreshToken   String?
+  resetToken     String?
+  resetTokenExp  DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  songRequests   SongRequest[]
+  votes          Vote[]
+  comments       Comment[]
+  rsvps          RSVP[]
+  donations      Donation[]
+  blogPosts      BlogPost[]
+}
+
+model Song {
+  id             String         @id @default(cuid())
+  title          String
+  artist         String?
+  lyrics         String?        @db.Text
+  youtubeUrl     String?
+  isOriginal     Boolean        @default(false)
+  requestCount   Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  requests       SongRequest[]
+  playlistItems  PlaylistItem[]
+  
+  @@unique([title, artist])
+}
+
+model SongRequest {
+  id             String         @id @default(cuid())
+  songTitle      String
+  stanzaNumber   String?
+  testimony      String?        @db.Text
+  status         RequestStatus  @default(PENDING)
+  voteCount      Int            @default(0)
+  scheduledDate  DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  songId         String?
+  song           Song?          @relation(fields: [songId], references: [id], onDelete: SetNull)
+  votes          Vote[]
+  playlistItem   PlaylistItem?
+}
+
+model Vote {
+  id             String         @id @default(cuid())
+  createdAt      DateTime       @default(now())
+  
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestId      String
+  request        SongRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, requestId])
+}
+
+model Event {
+  id             String         @id @default(cuid())
+  title          String
+  description    String?        @db.Text
+  eventDate      DateTime       @unique
+  bannerImage    String?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  sessions       Session[]
+  playlist       Playlist?
+  rsvps          RSVP[]
+}
+
+model Session {
+  id             String         @id @default(cuid())
+  type           SessionType
+  title          String
+  startTime      DateTime
+  endTime        DateTime?
+  worshipLeader  String?
+  notes          String?        @db.Text
+  order          Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  eventId        String
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  playlistItems  PlaylistItem[]
+  
+  @@unique([eventId, order])
+}
+
+model Playlist {
+  id             String         @id @default(cuid())
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  eventId        String         @unique
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  items          PlaylistItem[]
+}
+
+model PlaylistItem {
+  id             String         @id @default(cuid())
+  order          Int
+  backgroundImage String?
+  backgroundColor String?
+  notes          String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  playlistId     String
+  playlist       Playlist       @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  sessionId      String?
+  session        Session?       @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  songId         String?
+  song           Song?          @relation(fields: [songId], references: [id], onDelete: SetNull)
+  songRequestId  String?        @unique
+  songRequest    SongRequest?   @relation(fields: [songRequestId], references: [id], onDelete: SetNull)
+  
+  @@unique([playlistId, order])
+}
+
+model BlogPost {
+  id             String         @id @default(cuid())
+  title          String
+  slug           String         @unique
+  content        String         @db.Text
+  excerpt        String?
+  featuredImage  String?
+  youtubeUrl     String?
+  metaTitle      String?
+  metaDescription String?
+  metaKeywords   String?
+  views          Int            @default(0)
+  isPublished    Boolean        @default(false)
+  publishedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  authorId       String
+  author         User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  categories     Category[]
+  tags           Tag[]
+  comments       Comment[]
+}
+
+model Category {
+  id             String         @id @default(cuid())
+  name           String         @unique
+  slug           String         @unique
+  description    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  posts          BlogPost[]
+}
+
+model Tag {
+  id             String         @id @default(cuid())
+  name           String         @unique
+  slug           String         @unique
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  posts          BlogPost[]
+}
+
+model Comment {
+  id             String         @id @default(cuid())
+  content        String         @db.Text
+  isApproved     Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId         String
+  post           BlogPost       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parentId       String?
+  parent         Comment?       @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies        Comment[]      @relation("CommentReplies")
+}
+
+model Gallery {
+  id             String         @id @default(cuid())
+  title          String
+  description    String?
+  imageUrl       String
+  order          Int            @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model LandingContent {
+  id             String         @id @default(cuid())
+  section        String         @unique
+  title          String?
+  subtitle       String?
+  content        String?        @db.Text
+  imageUrl       String?
+  buttonText     String?
+  buttonLink     String?
+  order          Int            @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model EventBanner {
+  id             String         @id @default(cuid())
+  message        String
+  linkUrl        String?
+  linkText       String?
+  backgroundColor String?
+  textColor       String?
+  isActive       Boolean        @default(false)
+  startDate      DateTime?
+  endDate        DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Donation {
+  id             String         @id @default(cuid())
+  amount         Float
+  currency       String         @default("KES")
+  transactionId  String?        @unique
+  status         String         @default("PENDING")
+  donorName      String?
+  donorEmail     String?
+  isAnonymous    Boolean        @default(false)
+  message        String?        @db.Text
+  createdAt      DateTime       @default(now())
+  
+  userId         String?
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model RSVP {
+  id             String         @id @default(cuid())
+  status         String         @default("CONFIRMED")
+  numberOfGuests Int            @default(1)
+  notes          String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId        String
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, eventId])
+}
+
+model SystemSettings {
+  id             String         @id @default(cuid())
+  key            String         @unique
+  value          String         @db.Text
+  type           String         @default("string")
+  description    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model BlogPostCategory {
+  postId         String
+  categoryId     String
+  assignedAt     DateTime       @default(now())
+  
+  @@id([postId, categoryId])
+  @@map("blog_post_categories")
+}
+
+model BlogPostTag {
+  postId         String
+  tagId          String
+  assignedAt     DateTime       @default(now())
+  
+  @@id([postId, tagId])
+  @@map("blog_post_tags")
+}

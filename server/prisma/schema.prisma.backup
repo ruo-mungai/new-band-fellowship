@@ -1,0 +1,355 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum Role {
+  GUEST
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum RequestStatus {
+  PENDING
+  SCHEDULED
+  SUNG
+  REJECTED
+}
+
+enum SessionType {
+  FIRST_SESSION
+  SECOND_SESSION
+  REQUEST_TIME
+  TESTIMONY_TIME
+}
+
+// Models
+model User {
+  id             String         @id @default(cuid())
+  email          String         @unique
+  password       String
+  firstName      String
+  lastName       String
+  phone          String?
+  profileImage   String?
+  role           Role           @default(USER)
+  isApproved     Boolean        @default(false)
+  isBanned       Boolean        @default(false)
+  refreshToken   String?
+  resetToken     String?
+  resetTokenExp  DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  songRequests   SongRequest[]
+  votes          Vote[]
+  comments       Comment[]
+  rsvps          RSVP[]
+  donations      Donation[]
+  blogs          BlogPost[]     @relation("BlogAuthor")
+  
+  @@index([email])
+  @@index([role])
+  @@index([isApproved])
+}
+
+model Song {
+  id             String         @id @default(cuid())
+  title          String
+  artist         String?
+  lyrics         String?        @db.Text
+  youtubeUrl     String?
+  isOriginal     Boolean        @default(false)
+  requestCount   Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  requests       SongRequest[]
+  playlistItems  PlaylistItem[]
+  
+  @@unique([title, artist])
+  @@index([title])
+  @@index([requestCount])
+}
+
+model SongRequest {
+  id             String         @id @default(cuid())
+  songTitle      String
+  stanzaNumber   String?
+  testimony      String?        @db.Text
+  status         RequestStatus  @default(PENDING)
+  voteCount      Int            @default(0)
+  scheduledDate  DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  songId         String?
+  song           Song?          @relation(fields: [songId], references: [id])
+  votes          Vote[]
+  playlistItem   PlaylistItem?
+  
+  @@index([status])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([voteCount])
+}
+
+model Vote {
+  id             String         @id @default(cuid())
+  createdAt      DateTime       @default(now())
+  
+  // Relations
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  requestId      String
+  request        SongRequest    @relation(fields: [requestId], references: [id], onDelete: CASCADE)
+  
+  @@unique([userId, requestId])
+}
+
+model Event {
+  id             String         @id @default(cuid())
+  title          String
+  description    String?        @db.Text
+  eventDate      DateTime       @unique
+  bannerImage    String?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  sessions       Session[]
+  playlist       Playlist[]
+  rsvps          RSVP[]
+  
+  @@index([eventDate])
+  @@index([isActive])
+}
+
+model Session {
+  id             String         @id @default(cuid())
+  type           SessionType
+  title          String
+  startTime      DateTime
+  endTime        DateTime?
+  worshipLeader  String?
+  notes          String?        @db.Text
+  order          Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  eventId        String
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: CASCADE)
+  playlistItems  PlaylistItem[]
+  
+  @@unique([eventId, order])
+}
+
+model Playlist {
+  id             String         @id @default(cuid())
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  eventId        String         @unique
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: CASCADE)
+  items          PlaylistItem[]
+}
+
+model PlaylistItem {
+  id             String         @id @default(cuid())
+  order          Int
+  backgroundImage String?
+  backgroundColor String?
+  notes          String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  playlistId     String
+  playlist       Playlist       @relation(fields: [playlistId], references: [id], onDelete: CASCADE)
+  sessionId      String?
+  session        Session?       @relation(fields: [sessionId], references: [id])
+  songId         String?
+  song           Song?          @relation(fields: [songId], references: [id])
+  songRequestId  String?        @unique
+  songRequest    SongRequest?   @relation(fields: [songRequestId], references: [id])
+  
+  @@unique([playlistId, order])
+}
+
+model BlogPost {
+  id             String         @id @default(cuid())
+  title          String
+  slug           String         @unique
+  content        String         @db.Text
+  excerpt        String?
+  featuredImage  String?
+  youtubeUrl     String?
+  metaTitle      String?
+  metaDescription String?
+  metaKeywords   String?
+  views          Int            @default(0)
+  isPublished    Boolean        @default(false)
+  publishedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  authorId       String
+  author         User           @relation("BlogAuthor", fields: [authorId], references: [id])
+  categories     Category[]     @relation("BlogCategories")
+  tags           Tag[]          @relation("BlogTags")
+  comments       Comment[]
+  
+  @@index([slug])
+  @@index([isPublished, publishedAt])
+}
+
+model Category {
+  id             String         @id @default(cuid())
+  name           String         @unique
+  slug           String         @unique
+  description    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  posts          BlogPost[]     @relation("BlogCategories")
+}
+
+model Tag {
+  id             String         @id @default(cuid())
+  name           String         @unique
+  slug           String         @unique
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  posts          BlogPost[]     @relation("BlogTags")
+}
+
+model Comment {
+  id             String         @id @default(cuid())
+  content        String         @db.Text
+  isApproved     Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  postId         String
+  post           BlogPost       @relation(fields: [postId], references: [id], onDelete: CASCADE)
+  parentId       String?
+  parent         Comment?       @relation("CommentReplies", fields: [parentId], references: [id])
+  replies        Comment[]      @relation("CommentReplies")
+  
+  @@index([postId, isApproved])
+}
+
+model Gallery {
+  id             String         @id @default(cuid())
+  title          String
+  description    String?
+  imageUrl       String
+  order          Int            @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  @@index([isActive, order])
+}
+
+model LandingContent {
+  id             String         @id @default(cuid())
+  section        String         @unique
+  title          String?
+  subtitle       String?
+  content        String?        @db.Text
+  imageUrl       String?
+  buttonText     String?
+  buttonLink     String?
+  order          Int            @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  @@index([section, isActive])
+}
+
+model EventBanner {
+  id             String         @id @default(cuid())
+  message        String
+  linkUrl        String?
+  linkText       String?
+  backgroundColor String?
+  textColor       String?
+  isActive       Boolean        @default(false)
+  startDate      DateTime?
+  endDate        DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Donation {
+  id             String         @id @default(cuid())
+  amount         Float
+  currency       String         @default("KES")
+  transactionId  String?        @unique
+  status         String         @default("PENDING")
+  donorName      String?
+  donorEmail     String?
+  isAnonymous    Boolean        @default(false)
+  message        String?        @db.Text
+  createdAt      DateTime       @default(now())
+  
+  // Relations
+  userId         String?
+  user           User?          @relation(fields: [userId], references: [id])
+  
+  @@index([status])
+  @@index([createdAt])
+}
+
+model RSVP {
+  id             String         @id @default(cuid())
+  status         String         @default("CONFIRMED")
+  numberOfGuests Int            @default(1)
+  notes          String?        @db.Text
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relations
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: CASCADE)
+  eventId        String
+  event          Event          @relation(fields: [eventId], references: [id], onDelete: CASCADE)
+  
+  @@unique([userId, eventId])
+}
+
+model SystemSettings {
+  id             String         @id @default(cuid())
+  key            String         @unique
+  value          String         @db.Text
+  type           String         @default("string")
+  description    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  @@index([key])
+}
