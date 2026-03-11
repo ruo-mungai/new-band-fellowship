@@ -1,0 +1,31 @@
+# render.yaml - Place this in your repository root
+services:
+  # Your Node.js backend API service
+  - type: web
+    name: newband-api
+    runtime: node
+    repo: https://github.com/ruo-mungai/new-band-fellowship
+    rootDir: server  # CRITICAL: This tells Render your app is in the /server folder
+    plan: free
+    region: oregon  # Choose closest to you: oregon, ohio, frankfurt, singapore
+    branch: main
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: newband-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false  # You'll enter this manually in the dashboard
+      - key: JWT_REFRESH_SECRET
+        sync: false  # You'll enter this manually in the dashboard
+      - key: NODE_ENV
+        value: production
+
+databases:
+  # Your PostgreSQL database
+  - name: newband-db
+    plan: free
+    region: oregon  # Must match your web service region
