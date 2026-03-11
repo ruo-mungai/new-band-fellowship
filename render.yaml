@@ -1,13 +1,13 @@
-# render.yaml - Correct syntax with jobs
+# render.yaml - Place this in your repository root
 services:
-  # Your main web service
+  # Your Node.js backend API service
   - type: web
     name: newband-api
     runtime: node
     repo: https://github.com/ruo-mungai/new-band-fellowship
-    rootDir: server
+    rootDir: server  # CRITICAL: This tells Render your app is in the /server folder
     plan: free
-    region: frankfurt
+    region: oregon  # Choose closest to you: oregon, ohio, frankfurt, singapore
     branch: main
     buildCommand: npm install && npx prisma generate
     startCommand: npm start
@@ -18,47 +18,14 @@ services:
           name: newband-db
           property: connectionString
       - key: JWT_SECRET
-        sync: false
+        sync: false  # You'll enter this manually in the dashboard
       - key: JWT_REFRESH_SECRET
-        sync: false
+        sync: false  # You'll enter this manually in the dashboard
       - key: NODE_ENV
         value: production
 
-  # Separate job for migrations
-  - type: job
-    name: newband-migrations
-    runtime: node
-    repo: https://github.com/ruo-mungai/new-band-fellowship
-    rootDir: server
-    plan: free
-    region: frankfurt
-    branch: main
-    buildCommand: npm install
-    startCommand: npx prisma migrate deploy
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: newband-db
-          property: connectionString
-
-  # Separate job for seeding
-  - type: job
-    name: newband-seed
-    runtime: node
-    repo: https://github.com/ruo-mungai/new-band-fellowship
-    rootDir: server
-    plan: free
-    region: frankfurt
-    branch: main
-    buildCommand: npm install
-    startCommand: npx prisma db seed
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: newband-db
-          property: connectionString
-
 databases:
+  # Your PostgreSQL database
   - name: newband-db
     plan: free
-    region: frankfurt
+    region: oregon  # Must match your web service region
