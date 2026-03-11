@@ -6,23 +6,26 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting seeding...');
 
-  // Clear existing data (optional - comment out if you want to keep existing data)
+  // Clear existing data (in correct order to avoid foreign key constraints)
   console.log('Clearing existing data...');
   await prisma.$transaction([
     prisma.vote.deleteMany(),
     prisma.comment.deleteMany(),
+    prisma.blogPostCategory.deleteMany(),
+    prisma.blogPostTag.deleteMany(),
     prisma.playlistItem.deleteMany(),
     prisma.playlist.deleteMany(),
     prisma.session.deleteMany(),
-    prisma.event.deleteMany(),
+    prisma.rSVP.deleteMany(),
     prisma.songRequest.deleteMany(),
-    prisma.song.deleteMany(),
     prisma.blogPost.deleteMany(),
     prisma.category.deleteMany(),
     prisma.tag.deleteMany(),
     prisma.gallery.deleteMany(),
     prisma.landingContent.deleteMany(),
     prisma.eventBanner.deleteMany(),
+    prisma.event.deleteMany(),
+    prisma.song.deleteMany(),
     prisma.systemSettings.deleteMany(),
     prisma.user.deleteMany(),
   ]);
@@ -172,7 +175,7 @@ async function main() {
   console.log('Creating users...');
   const hashedPassword = await bcrypt.hash('Password123!', 10);
 
-  const users = await prisma.user.createMany({
+  await prisma.user.createMany({
     data: [
       {
         email: 'superadmin@newband.org',
@@ -181,7 +184,6 @@ async function main() {
         lastName: 'Admin',
         role: 'SUPER_ADMIN',
         isApproved: true,
-        isEmailVerified: true,
         authProvider: 'local',
         bio: 'Super Administrator of New Band Fellowship',
       },
@@ -192,7 +194,6 @@ async function main() {
         lastName: 'User',
         role: 'ADMIN',
         isApproved: true,
-        isEmailVerified: true,
         authProvider: 'local',
         bio: 'Administrator of New Band Fellowship',
       },
@@ -204,7 +205,6 @@ async function main() {
         phone: '+254700000001',
         role: 'USER',
         isApproved: true,
-        isEmailVerified: true,
         authProvider: 'local',
         bio: 'Active member since 2023',
       },
@@ -216,7 +216,6 @@ async function main() {
         phone: '+254700000002',
         role: 'USER',
         isApproved: true,
-        isEmailVerified: true,
         authProvider: 'local',
         bio: 'Worship team member',
       },
@@ -228,55 +227,22 @@ async function main() {
         phone: '+254700000003',
         role: 'USER',
         isApproved: false,
-        isEmailVerified: false,
         authProvider: 'local',
         bio: 'New member waiting approval',
       },
     ],
   });
 
-  // Add this to server.js temporarily
-app.post('/api/seed/songs', async (req, res) => {
-  try {
-    const songs = await prisma.song.createMany({
-      data: [
-        {
-          title: 'Njambi Ya Thengo',
-          artist: 'Traditional',
-          lyrics: `Njambi ya thengo, njambi ya thengo\nTwendee twendee twendee\nNjambi ya thengo, njambi ya thengo\nTwendee twendee twendee`,
-          isOriginal: false,
-        },
-        {
-          title: 'Wendo Wi Mwega',
-          artist: 'Kikuyu Gospel',
-          lyrics: `Wendo wi mwega, wendo wi mwega\nNjambi ahendire andu othe\nWendo wi mwega, wendo wi mwega\nTwendane o ta uria Njambi atwendete`,
-          isOriginal: false,
-        },
-        {
-          title: 'Ndi Mukenya',
-          artist: 'Agendi',
-          lyrics: `Ndi mukenya, ndi mukenya\nNĩ ũndũ wa Njambi wakwa\nNdi mukenya, ndi mukenya\nNĩ wendo wake uhunjagia`,
-          isOriginal: true,
-        },
-      ],
-    });
-    
-    res.json({ message: `Created ${songs.count} sample songs` });
-  } catch (error) {
-    console.error('Error seeding songs:', error);
-    res.status(500).json({ message: 'Failed to seed songs' });
-  }
-});
-
   // Get created users for relationships
   const superAdmin = await prisma.user.findUnique({ where: { email: 'superadmin@newband.org' } });
   const admin = await prisma.user.findUnique({ where: { email: 'admin@newband.org' } });
   const user1 = await prisma.user.findUnique({ where: { email: 'user1@example.com' } });
   const user2 = await prisma.user.findUnique({ where: { email: 'user2@example.com' } });
+  const user3 = await prisma.user.findUnique({ where: { email: 'user3@example.com' } });
 
   // Create Songs
   console.log('Creating songs...');
-  const songs = await prisma.song.createMany({
+  await prisma.song.createMany({
     data: [
       {
         title: 'Njambi Ya Thengo',
@@ -308,10 +274,29 @@ app.post('/api/seed/songs', async (req, res) => {
         lyrics: `Twendete Jesu nĩwe mũhonokia\nTwendete Jesu nĩwe mũthithia\nTũkũmũgoocaga\nMatukũ mothe ma muoyo witũ`,
         requestCount: 1,
       },
+      // Additional songs that were in the embedded route
+      {
+        title: 'Njambi Ya Thengo (Alternate)',
+        artist: 'Traditional',
+        lyrics: `Njambi ya thengo, njambi ya thengo\nTwendee twendee twendee\nNjambi ya thengo, njambi ya thengo\nTwendee twendee twendee`,
+        isOriginal: false,
+      },
+      {
+        title: 'Wendo Wi Mwega (Chorus)',
+        artist: 'Kikuyu Gospel',
+        lyrics: `Wendo wi mwega, wendo wi mwega\nNjambi ahendire andu othe\nWendo wi mwega, wendo wi mwega\nTwendane o ta uria Njambi atwendete`,
+        isOriginal: false,
+      },
+      {
+        title: 'Ndi Mukenya (Agendi)',
+        artist: 'Agendi',
+        lyrics: `Ndi mukenya, ndi mukenya\nNĩ ũndũ wa Njambi wakwa\nNdi mukenya, ndi mukenya\nNĩ wendo wake uhunjagia`,
+        isOriginal: true,
+      },
     ],
   });
 
-  // Get created songs
+  // Get created songs for relationships
   const song1 = await prisma.song.findFirst({ where: { title: 'Njambi Ya Thengo' } });
   const song2 = await prisma.song.findFirst({ where: { title: 'Wendo Wi Mwega' } });
   const song3 = await prisma.song.findFirst({ where: { title: 'Ndi Mukenya' } });
@@ -360,8 +345,8 @@ app.post('/api/seed/songs', async (req, res) => {
     data: {
       type: 'FIRST_SESSION',
       title: 'Opening Worship',
-      startTime: new Date(nextSunday.setHours(9, 0, 0)),
-      endTime: new Date(nextSunday.setHours(10, 0, 0)),
+      startTime: new Date(new Date(nextSunday).setHours(9, 0, 0)),
+      endTime: new Date(new Date(nextSunday).setHours(10, 0, 0)),
       worshipLeader: 'Brother Peter Mwangi',
       notes: 'Open with traditional hymns. Focus on praise and thanksgiving.',
       order: 1,
@@ -373,8 +358,8 @@ app.post('/api/seed/songs', async (req, res) => {
     data: {
       type: 'SECOND_SESSION',
       title: 'Main Worship',
-      startTime: new Date(nextSunday.setHours(10, 15, 0)),
-      endTime: new Date(nextSunday.setHours(11, 30, 0)),
+      startTime: new Date(new Date(nextSunday).setHours(10, 15, 0)),
+      endTime: new Date(new Date(nextSunday).setHours(11, 30, 0)),
       worshipLeader: 'Elder Mary Wanjiku',
       notes: 'Main worship session with choir. Include song requests.',
       order: 2,
@@ -386,8 +371,8 @@ app.post('/api/seed/songs', async (req, res) => {
     data: {
       type: 'TESTIMONY_TIME',
       title: 'Testimonies',
-      startTime: new Date(nextSunday.setHours(11, 30, 0)),
-      endTime: new Date(nextSunday.setHours(12, 0, 0)),
+      startTime: new Date(new Date(nextSunday).setHours(11, 30, 0)),
+      endTime: new Date(new Date(nextSunday).setHours(12, 0, 0)),
       worshipLeader: 'Pastor John Kamau',
       notes: 'Time for members to share testimonies.',
       order: 3,
@@ -410,7 +395,7 @@ app.post('/api/seed/songs', async (req, res) => {
       {
         playlistId: playlist.id,
         sessionId: session1.id,
-        songId: song1.id,
+        songId: song1?.id,
         order: 1,
         backgroundColor: '#f97316',
         notes: 'Opening song - all congregation',
@@ -418,7 +403,7 @@ app.post('/api/seed/songs', async (req, res) => {
       {
         playlistId: playlist.id,
         sessionId: session1.id,
-        songId: song2.id,
+        songId: song2?.id,
         order: 2,
         backgroundColor: '#ea580c',
         notes: 'Second song - choir leads',
@@ -426,7 +411,7 @@ app.post('/api/seed/songs', async (req, res) => {
       {
         playlistId: playlist.id,
         sessionId: session2.id,
-        songId: song3.id,
+        songId: song3?.id,
         order: 3,
         backgroundColor: '#c2410c',
         notes: 'Main worship song',
@@ -434,7 +419,7 @@ app.post('/api/seed/songs', async (req, res) => {
       {
         playlistId: playlist.id,
         sessionId: session2.id,
-        songId: song4.id,
+        songId: song4?.id,
         order: 4,
         backgroundColor: '#9a3412',
         notes: 'Closing worship song',
@@ -444,63 +429,62 @@ app.post('/api/seed/songs', async (req, res) => {
 
   // Create Song Requests
   console.log('Creating song requests...');
-  const request1 = await prisma.songRequest.create({
-    data: {
-      songTitle: 'Njambi Ya Thengo',
-      stanzaNumber: 'Verse 1 and Chorus',
-      testimony: 'This song has been a blessing to my family for generations. It reminds us of God\'s faithfulness.',
-      status: 'PENDING',
-      voteCount: 3,
-      userId: user1.id,
-      songId: song1.id,
-    }
-  });
-
-  const request2 = await prisma.songRequest.create({
-    data: {
-      songTitle: 'Wendo Wi Mwega',
-      testimony: 'I experienced God\'s love through this song during a difficult time.',
-      status: 'SCHEDULED',
-      scheduledDate: nextSunday,
-      voteCount: 5,
-      userId: user2.id,
-      songId: song2.id,
-    }
-  });
-
-  const request3 = await prisma.songRequest.create({
-    data: {
-      songTitle: 'Ndi Mukenya',
-      stanzaNumber: 'All verses',
-      testimony: 'This song brings so much joy to my heart.',
-      status: 'SUNG',
-      voteCount: 2,
-      userId: user1.id,
-      songId: song3.id,
-    }
-  });
-
-  // Create Votes
-  console.log('Creating votes...');
-  await prisma.vote.createMany({
-    data: [
-      {
+  if (user1 && user2 && song1 && song2 && song3) {
+    const request1 = await prisma.songRequest.create({
+      data: {
+        songTitle: song1.title,
+        stanzaNumber: 'Verse 1 and Chorus',
+        testimony: 'This song has been a blessing to my family for generations. It reminds us of God\'s faithfulness.',
+        status: 'PENDING',
+        voteCount: 3,
         userId: user1.id,
-        requestId: request2.id,
-        eventId: event1.id,
-      },
-      {
+        songId: song1.id,
+      }
+    });
+
+    const request2 = await prisma.songRequest.create({
+      data: {
+        songTitle: song2.title,
+        testimony: 'I experienced God\'s love through this song during a difficult time.',
+        status: 'SCHEDULED',
+        scheduledDate: nextSunday,
+        voteCount: 5,
         userId: user2.id,
-        requestId: request2.id,
-        eventId: event1.id,
-      },
-      {
+        songId: song2.id,
+      }
+    });
+
+    const request3 = await prisma.songRequest.create({
+      data: {
+        songTitle: song3.title,
+        stanzaNumber: 'All verses',
+        testimony: 'This song brings so much joy to my heart.',
+        status: 'SUNG',
+        voteCount: 2,
         userId: user1.id,
-        requestId: request1.id,
-        eventId: event1.id,
-      },
-    ],
-  });
+        songId: song3.id,
+      }
+    });
+
+    // Create Votes
+    console.log('Creating votes...');
+    await prisma.vote.createMany({
+      data: [
+        {
+          userId: user1.id,
+          requestId: request2.id,
+        },
+        {
+          userId: user2.id,
+          requestId: request2.id,
+        },
+        {
+          userId: user1.id,
+          requestId: request1.id,
+        },
+      ],
+    });
+  }
 
   // Create Blog Categories
   console.log('Creating blog categories...');
@@ -553,71 +537,74 @@ app.post('/api/seed/songs', async (req, res) => {
 
   // Create Blog Posts
   console.log('Creating blog posts...');
-  const blog1 = await prisma.blogPost.create({
-    data: {
-      title: 'The Power of Traditional Gospel Music',
-      slug: 'power-of-traditional-gospel-music',
-      content: '<p>Traditional Kikuyu gospel music has a unique way of touching the soul. The melodies passed down through generations carry the faith of our ancestors.</p><p>When we sing these songs, we connect not just with God, but with our heritage. The lyrics speak of God\'s faithfulness, His provision, and His love for His people.</p><p>In our fellowship, we\'ve seen how these songs bring people together. Young and old alike are moved by the familiar tunes and powerful messages.</p>',
-      excerpt: 'Discover how traditional Kikuyu gospel music connects generations and deepens worship.',
-      featuredImage: 'https://images.unsplash.com/photo-1507692049790-de58290c433e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-      metaTitle: 'The Power of Traditional Gospel Music - New Band Fellowship',
-      metaDescription: 'Explore the rich heritage of Kikuyu gospel music and how it brings generations together in worship.',
-      metaKeywords: 'gospel music, traditional, kikuyu, worship',
-      views: 45,
-      isPublished: true,
-      publishedAt: new Date(),
-      authorId: admin.id,
-    }
-  });
+  if (admin) {
+    const blog1 = await prisma.blogPost.create({
+      data: {
+        title: 'The Power of Traditional Gospel Music',
+        slug: 'power-of-traditional-gospel-music',
+        content: '<p>Traditional Kikuyu gospel music has a unique way of touching the soul. The melodies passed down through generations carry the faith of our ancestors.</p><p>When we sing these songs, we connect not just with God, but with our heritage. The lyrics speak of God\'s faithfulness, His provision, and His love for His people.</p><p>In our fellowship, we\'ve seen how these songs bring people together. Young and old alike are moved by the familiar tunes and powerful messages.</p>',
+        excerpt: 'Discover how traditional Kikuyu gospel music connects generations and deepens worship.',
+        featuredImage: 'https://images.unsplash.com/photo-1507692049790-de58290c433e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+        metaTitle: 'The Power of Traditional Gospel Music - New Band Fellowship',
+        metaDescription: 'Explore the rich heritage of Kikuyu gospel music and how it brings generations together in worship.',
+        metaKeywords: 'gospel music, traditional, kikuyu, worship',
+        views: 45,
+        isPublished: true,
+        publishedAt: new Date(),
+        authorId: admin.id,
+      }
+    });
 
-  // Connect categories and tags to blog post
-  await prisma.blogPostCategory.create({
-    data: {
-      postId: blog1.id,
-      categoryId: category1.id,
-    }
-  });
+    // Connect categories and tags to blog post
+    await prisma.blogPostCategory.create({
+      data: {
+        postId: blog1.id,
+        categoryId: category1.id,
+      }
+    });
 
-  await prisma.blogPostCategory.create({
-    data: {
-      postId: blog1.id,
-      categoryId: category3.id,
-    }
-  });
+    await prisma.blogPostCategory.create({
+      data: {
+        postId: blog1.id,
+        categoryId: category3.id,
+      }
+    });
 
-  await prisma.blogPostTag.create({
-    data: {
-      postId: blog1.id,
-      tagId: tag1.id,
-    }
-  });
+    await prisma.blogPostTag.create({
+      data: {
+        postId: blog1.id,
+        tagId: tag1.id,
+      }
+    });
 
-  await prisma.blogPostTag.create({
-    data: {
-      postId: blog1.id,
-      tagId: tag2.id,
-    }
-  });
+    await prisma.blogPostTag.create({
+      data: {
+        postId: blog1.id,
+        tagId: tag2.id,
+      }
+    });
 
-  // Create Comments
-  console.log('Creating comments...');
-  await prisma.comment.create({
-    data: {
-      content: 'This is so true! I grew up singing these songs with my grandmother.',
-      isApproved: true,
-      userId: user1.id,
-      postId: blog1.id,
+    // Create Comments
+    if (user1 && user2) {
+      console.log('Creating comments...');
+      await prisma.comment.createMany({
+        data: [
+          {
+            content: 'This is so true! I grew up singing these songs with my grandmother.',
+            isApproved: true,
+            userId: user1.id,
+            postId: blog1.id,
+          },
+          {
+            content: 'Thank you for sharing. These songs are a treasure.',
+            isApproved: true,
+            userId: user2.id,
+            postId: blog1.id,
+          },
+        ],
+      });
     }
-  });
-
-  await prisma.comment.create({
-    data: {
-      content: 'Thank you for sharing. These songs are a treasure.',
-      isApproved: true,
-      userId: user2.id,
-      postId: blog1.id,
-    }
-  });
+  }
 
   // Create Gallery Images
   console.log('Creating gallery...');
