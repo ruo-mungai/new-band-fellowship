@@ -271,7 +271,6 @@ model Tag {
   // Relations
   posts          BlogPost[]
 }
-
 model Comment {
   id             String         @id @default(cuid())
   content        String         @db.Text
@@ -284,8 +283,10 @@ model Comment {
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   postId         String
   post           BlogPost       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  // Self-relation for replies - FIXED with Restrict
   parentId       String?
-  parent         Comment?       @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  parent         Comment?       @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   replies        Comment[]      @relation("CommentReplies")
   
   @@index([postId, isApproved])
