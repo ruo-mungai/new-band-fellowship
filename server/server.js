@@ -3,29 +3,37 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
+const { withAccelerate } = require('@prisma/extension-accelerate');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-const prisma = new PrismaClient();
+// ==================== PRISMA CLIENT WITH ACCELERATE ====================
+// Create Prisma client with Accelerate extension for serverless
+const prisma = new PrismaClient().$extends(withAccelerate());
+
 const app = express();
 const PORT = process.env.PORT || 5000;
-const DATABASE_URL = process.env.DATABASE_URL;
 
-// JWT Secret
+// JWT Secrets
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'your-refresh-secret-key-change-this';
 
-// Create uploads directory if it doesn't exist
-if (!fs.existsSync('uploads')) {
+// Create uploads directory if it doesn't exist (for local development)
+if (!fs.existsSync('uploads') && process.env.NODE_ENV !== 'production') {
   fs.mkdirSync('uploads');
 }
 
 // ==================== MIDDLEWARE ====================
 
-// CORS configuration
+// CORS configuration - Allow both local and production origins
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5173'],
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://new-band-fellowship.vercel.app', // Your frontend URL
+    ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [])
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -94,52 +102,8 @@ app.get('/', (req, res) => {
     message: 'New Band Fellowship API',
     status: 'running',
     timestamp: new Date(),
-    endpoints: [
-      '/api/test',
-      '/api/public/landing',
-      '/api/public/events',
-      '/api/public/gallery',
-      '/api/public/blogs',
-      '/api/public/blogs/:slug',
-      '/api/public/playlist/upcoming',
-      '/api/public/categories',
-      '/api/public/tags',
-      '/api/events',
-      '/api/events/:id',
-      '/api/blogs',
-      '/api/blogs/:slug',
-      '/api/gallery',
-      '/api/songs/master',
-      '/api/songs/:id',
-      '/api/songs',
-      '/api/songs/requests',
-      '/api/playlists/:playlistId/songs/:songId',
-      '/api/auth/register',
-      '/api/auth/login',
-      '/api/auth/me',
-      '/api/auth/logout',
-      '/api/auth/refresh-token',
-      '/api/users/profile',
-      '/api/users/song-requests',
-      '/api/admin/dashboard',
-      '/api/admin/users',
-      '/api/admin/settings',
-      '/api/admin/events',
-      '/api/admin/gallery',
-      '/api/admin/landing',
-      '/api/admin/requests',
-      '/api/admin/playlist/:eventId',
-      '/api/admin/playlist/:eventId/items',
-      '/api/admin/playlist/items/:itemId',
-      '/api/admin/playlist/:eventId/reorder',
-      '/api/admin/blogs',
-      '/api/admin/comments',
-      '/api/admin/banner',
-      '/api/admin/sessions',
-      '/api/admin/team',
-      '/api/admin/super/admins',
-      '/api/admin/super/logs'
-    ]
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0'
   });
 });
 
@@ -154,7 +118,11 @@ app.get('/api/test', (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // ==================== PUBLIC ROUTES ====================
@@ -162,14 +130,17 @@ app.get('/health', (req, res) => {
 // Public: Get landing page content
 app.get('/api/public/landing', async (req, res) => {
   try {
-    const hero = await prisma.landingContent.findUnique({ where: { section: 'hero' } });
-    const about = await prisma.landingContent.findUnique({ where: { section: 'about' } });
-    const mission = await prisma.landingContent.findUnique({ where: { section: 'mission' } });
-    const vision = await prisma.landingContent.findUnique({ where: { section: 'vision' } });
+    // Use Accelerate for better performance in serverless
+    const [hero, about, mission, vision, settings] = await Promise.all([
+      prisma.landingContent.findUnique({ where: { section: 'hero' } }).withAccelerate(),
+      prisma.landingContent.findUnique({ where: { section: 'about' } }).withAccelerate(),
+      prisma.landingContent.findUnique({ where: { section: 'mission' } }).withAccelerate(),
+      prisma.landingContent.findUnique({ where: { section: 'vision' } }).withAccelerate(),
+      prisma.systemSettings.findMany().withAccelerate()
+    ]);
     
-    const settings = await prisma.systemSettings.findMany();
-    const siteTitle = settings.find(s => s.key === 'siteTitle')?.value || 'New Band Fellowship';
-    const logo = settings.find(s => s.key === 'logo')?.value || '';
+    const siteTitle = settings?.find(s => s.key === 'siteTitle')?.value || 'New Band Fellowship';
+    const logo = settings?.find(s => s.key === 'logo')?.value || '';
 
     res.json({
       hero: hero || {
@@ -217,18 +188,19 @@ app.get('/api/public/events', async (req, res) => {
       where.eventDate = { lt: now };
     }
     
-    const events = await prisma.event.findMany({
-      where,
-      include: {
-        rsvps: true,
-        sessions: true,
-      },
-      orderBy: { eventDate: 'asc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.event.count({ where });
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        where,
+        include: {
+          rsvps: true,
+          sessions: true,
+        },
+        orderBy: { eventDate: 'asc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.event.count({ where })
+    ]);
 
     console.log(`✅ Found ${events.length} events`);
     
@@ -286,7 +258,7 @@ app.get('/api/events/:id', async (req, res) => {
           }
         }
       }
-    });
+    }).withAccelerate();
     
     if (!event) {
       console.log(`❌ Event not found: ${id}`);
@@ -320,18 +292,19 @@ app.get('/api/events', async (req, res) => {
       where.eventDate = { lt: now };
     }
     
-    const events = await prisma.event.findMany({
-      where,
-      include: {
-        rsvps: true,
-        sessions: true,
-      },
-      orderBy: { eventDate: 'asc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.event.count({ where });
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        where,
+        include: {
+          rsvps: true,
+          sessions: true,
+        },
+        orderBy: { eventDate: 'asc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.event.count({ where })
+    ]);
 
     res.json({
       items: events.map(event => ({
@@ -362,7 +335,7 @@ app.post('/api/events/:id/rsvp', authenticateToken, async (req, res) => {
     // Check if event exists
     const event = await prisma.event.findUnique({
       where: { id }
-    });
+    }).withAccelerate();
     
     if (!event) {
       return res.status(404).json({ message: 'Event not found' });
@@ -376,7 +349,7 @@ app.post('/api/events/:id/rsvp', authenticateToken, async (req, res) => {
           eventId: id
         }
       }
-    });
+    }).withAccelerate();
     
     if (existingRSVP) {
       return res.status(400).json({ message: 'Already RSVPed to this event' });
@@ -441,7 +414,7 @@ app.get('/api/public/gallery', async (req, res) => {
     const images = await prisma.gallery.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' }
-    });
+    }).withAccelerate();
     res.json(images);
   } catch (error) {
     console.error('Error fetching gallery:', error);
@@ -464,24 +437,25 @@ app.get('/api/public/blogs', async (req, res) => {
       ];
     }
     
-    const posts = await prisma.blogPost.findMany({
-      where,
-      include: {
-        author: {
-          select: { id: true, firstName: true, lastName: true, profileImage: true }
+    const [posts, total] = await Promise.all([
+      prisma.blogPost.findMany({
+        where,
+        include: {
+          author: {
+            select: { id: true, firstName: true, lastName: true, profileImage: true }
+          },
+          categories: true,
+          tags: true,
+          _count: {
+            select: { comments: true }
+          }
         },
-        categories: true,
-        tags: true,
-        _count: {
-          select: { comments: true }
-        }
-      },
-      orderBy: { publishedAt: 'desc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.blogPost.count({ where });
+        orderBy: { publishedAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.blogPost.count({ where })
+    ]);
 
     res.json({
       items: posts.map(post => ({
@@ -532,9 +506,9 @@ app.get('/api/public/blogs/:slug', async (req, res) => {
           orderBy: { createdAt: 'asc' }
         }
       }
-    });
+    }).withAccelerate();
 
-    if (!post) {
+    if (!post || !post.isPublished) {
       return res.status(404).json({ message: 'Blog post not found' });
     }
 
@@ -572,7 +546,7 @@ app.get('/api/public/playlist/upcoming', async (req, res) => {
         }
       },
       orderBy: { eventDate: 'asc' }
-    });
+    }).withAccelerate();
 
     if (!nextEvent || !nextEvent.playlist) {
       return res.status(404).json({ message: 'No upcoming playlist found' });
@@ -594,7 +568,7 @@ app.get('/api/public/playlist/upcoming', async (req, res) => {
 // Public: Get categories
 app.get('/api/public/categories', async (req, res) => {
   try {
-    const categories = await prisma.category.findMany();
+    const categories = await prisma.category.findMany().withAccelerate();
     res.json(categories);
   } catch (error) {
     console.error('Error fetching categories:', error);
@@ -605,7 +579,7 @@ app.get('/api/public/categories', async (req, res) => {
 // Public: Get tags
 app.get('/api/public/tags', async (req, res) => {
   try {
-    const tags = await prisma.tag.findMany();
+    const tags = await prisma.tag.findMany().withAccelerate();
     res.json(tags);
   } catch (error) {
     console.error('Error fetching tags:', error);
@@ -613,24 +587,10 @@ app.get('/api/public/tags', async (req, res) => {
   }
 });
 
-// Public: Get team members
-app.get('/api/public/team', async (req, res) => {
-  try {
-    const team = await prisma.teamMember.findMany({
-      where: { isActive: true },
-      orderBy: { order: 'asc' }
-    });
-    res.json(team);
-  } catch (error) {
-    console.error('Error fetching team:', error);
-    res.status(500).json({ message: 'Failed to fetch team' });
-  }
-});
-
 // Public settings endpoint
 app.get('/api/public/settings', async (req, res) => {
   try {
-    const settings = await prisma.systemSettings.findMany();
+    const settings = await prisma.systemSettings.findMany().withAccelerate();
     
     const settingsObj = {};
     settings.forEach(s => {
@@ -657,7 +617,10 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password, firstName, lastName, phone } = req.body;
     
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser = await prisma.user.findUnique({ 
+      where: { email } 
+    }).withAccelerate();
+    
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -700,7 +663,10 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ 
+      where: { email } 
+    }).withAccelerate();
+    
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -772,7 +738,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
         bio: true,
         createdAt: true,
       }
-    });
+    }).withAccelerate();
     
     if (!user) {
       console.log('❌ User not found:', req.user.id);
@@ -817,7 +783,7 @@ app.post('/api/auth/refresh-token', async (req, res) => {
     
     const user = await prisma.user.findFirst({
       where: { refreshToken }
-    });
+    }).withAccelerate();
     
     if (!user) {
       return res.status(403).json({ message: 'Invalid refresh token' });
@@ -861,7 +827,7 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
         bio: true,
         createdAt: true,
       }
-    });
+    }).withAccelerate();
     
     res.json(user);
   } catch (error) {
@@ -930,7 +896,7 @@ app.get('/api/users/song-requests', authenticateToken, async (req, res) => {
         votes: true,
       },
       orderBy: { createdAt: 'desc' }
-    });
+    }).withAccelerate();
     
     res.json(requests.map(req => ({
       ...req,
@@ -958,14 +924,15 @@ app.get('/api/songs/master', async (req, res) => {
       ];
     }
     
-    const songs = await prisma.song.findMany({
-      where,
-      orderBy: { title: 'asc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.song.count({ where });
+    const [songs, total] = await Promise.all([
+      prisma.song.findMany({
+        where,
+        orderBy: { title: 'asc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.song.count({ where })
+    ]);
 
     res.json({
       items: songs,
@@ -1011,7 +978,7 @@ app.get('/api/songs/:id', async (req, res) => {
           select: { requests: true }
         }
       }
-    });
+    }).withAccelerate();
     
     if (!song) {
       console.log(`❌ Song not found: ${id}`);
@@ -1141,40 +1108,41 @@ app.get('/api/songs/requests', authenticateToken, async (req, res) => {
     
     console.log('📡 Where clause:', where);
     
-    const requests = await prisma.songRequest.findMany({
-      where,
-      include: {
-        user: {
-          select: { 
-            id: true, 
-            firstName: true, 
-            lastName: true,
-            email: true,
-            profileImage: true
-          }
-        },
-        song: true,
-        votes: {
-          include: {
-            user: {
-              select: { 
-                id: true, 
-                firstName: true, 
-                lastName: true 
+    const [requests, total] = await Promise.all([
+      prisma.songRequest.findMany({
+        where,
+        include: {
+          user: {
+            select: { 
+              id: true, 
+              firstName: true, 
+              lastName: true,
+              email: true,
+              profileImage: true
+            }
+          },
+          song: true,
+          votes: {
+            include: {
+              user: {
+                select: { 
+                  id: true, 
+                  firstName: true, 
+                  lastName: true 
+                }
               }
             }
+          },
+          _count: {
+            select: { votes: true }
           }
         },
-        _count: {
-          select: { votes: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.songRequest.count({ where });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.songRequest.count({ where })
+    ]);
 
     console.log(`✅ Found ${requests.length} song requests (total: ${total})`);
 
@@ -1232,7 +1200,7 @@ app.post('/api/songs/requests', authenticateToken, async (req, res) => {
       // Verify the song exists
       const song = await prisma.song.findUnique({
         where: { id: songId }
-      });
+      }).withAccelerate();
       
       if (song) {
         requestData.songId = songId;
@@ -1293,7 +1261,7 @@ app.post('/api/songs/requests/:id/vote', authenticateToken, async (req, res) => 
           requestId: id
         }
       }
-    });
+    }).withAccelerate();
     
     if (existingVote) {
       // Remove vote
@@ -1336,7 +1304,7 @@ app.post('/api/songs/requests/:id/vote', authenticateToken, async (req, res) => 
           select: { votes: true }
         }
       }
-    });
+    }).withAccelerate();
     
     res.json({
       ...request,
@@ -1367,7 +1335,7 @@ app.get('/api/playlists/:playlistId/songs/:songId', async (req, res) => {
           }
         }
       }
-    });
+    }).withAccelerate();
     
     if (!playlistItem) {
       return res.status(404).json({ message: 'Playlist item not found' });
@@ -1385,19 +1353,27 @@ app.get('/api/playlists/:playlistId/songs/:songId', async (req, res) => {
 // Get dashboard statistics
 app.get('/api/admin/dashboard', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const totalUsers = await prisma.user.count();
-    const pendingUsers = await prisma.user.count({ where: { isApproved: false } });
-    const totalEvents = await prisma.event.count();
-    const upcomingEvents = await prisma.event.count({
-      where: { eventDate: { gt: new Date() } }
-    });
-    const totalRequests = await prisma.songRequest.count();
-    const pendingRequests = await prisma.songRequest.count({
-      where: { status: 'PENDING' }
-    });
-    const totalBlogs = await prisma.blogPost.count();
-    const totalComments = await prisma.comment.count();
-    const totalSongs = await prisma.song.count();
+    const [
+      totalUsers, 
+      pendingUsers, 
+      totalEvents, 
+      upcomingEvents, 
+      totalRequests, 
+      pendingRequests, 
+      totalBlogs, 
+      totalComments, 
+      totalSongs
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { isApproved: false } }),
+      prisma.event.count(),
+      prisma.event.count({ where: { eventDate: { gt: new Date() } } }),
+      prisma.songRequest.count(),
+      prisma.songRequest.count({ where: { status: 'PENDING' } }),
+      prisma.blogPost.count(),
+      prisma.comment.count(),
+      prisma.song.count()
+    ]);
     
     const recentUsers = await prisma.user.findMany({
       take: 5,
@@ -1408,13 +1384,13 @@ app.get('/api/admin/dashboard', authenticateToken, requireAdmin, async (req, res
         lastName: true,
         createdAt: true,
       }
-    });
+    }).withAccelerate();
     
     const recentRequests = await prisma.songRequest.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: { user: true },
-    });
+    }).withAccelerate();
     
     const recentActivity = [
       ...recentUsers.map(u => ({
@@ -1466,26 +1442,27 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
       ];
     }
     
-    const users = await prisma.user.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit),
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        role: true,
-        isApproved: true,
-        isBanned: true,
-        profileImage: true,
-        createdAt: true,
-      }
-    });
-    
-    const total = await prisma.user.count({ where });
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          role: true,
+          isApproved: true,
+          isBanned: true,
+          profileImage: true,
+          createdAt: true,
+        }
+      }).withAccelerate(),
+      prisma.user.count({ where })
+    ]);
     
     res.json({
       items: users,
@@ -1522,7 +1499,7 @@ app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
         bio: true,
         createdAt: true,
       }
-    });
+    }).withAccelerate();
     
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -1653,7 +1630,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
 // Get system settings
 app.get('/api/admin/settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const settings = await prisma.systemSettings.findMany();
+    const settings = await prisma.systemSettings.findMany().withAccelerate();
     
     const settingsObj = {};
     settings.forEach(s => {
@@ -1714,23 +1691,24 @@ app.get('/api/admin/events', authenticateToken, requireAdmin, async (req, res) =
       where.eventDate = { lt: now };
     }
     
-    const events = await prisma.event.findMany({
-      where,
-      include: {
-        rsvps: true,
-        sessions: {
-          orderBy: { order: 'asc' }
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        where,
+        include: {
+          rsvps: true,
+          sessions: {
+            orderBy: { order: 'asc' }
+          },
+          _count: {
+            select: { rsvps: true }
+          }
         },
-        _count: {
-          select: { rsvps: true }
-        }
-      },
-      orderBy: { eventDate: 'asc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.event.count({ where });
+        orderBy: { eventDate: 'asc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.event.count({ where })
+    ]);
 
     console.log(`✅ Found ${events.length} events for admin`);
 
@@ -1820,7 +1798,7 @@ app.get('/api/admin/events/:id', authenticateToken, requireAdmin, async (req, re
           }
         }
       }
-    });
+    }).withAccelerate();
     
     if (!event) {
       return res.status(404).json({ message: 'Event not found' });
@@ -1883,7 +1861,7 @@ app.get('/api/admin/gallery', authenticateToken, requireAdmin, async (req, res) 
   try {
     const images = await prisma.gallery.findMany({
       orderBy: { order: 'asc' }
-    });
+    }).withAccelerate();
     res.json(images);
   } catch (error) {
     console.error('Error fetching gallery:', error);
@@ -1977,7 +1955,7 @@ app.post('/api/admin/gallery/reorder', authenticateToken, requireAdmin, async (r
 // Get landing content for editing
 app.get('/api/admin/landing', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const sections = await prisma.landingContent.findMany();
+    const sections = await prisma.landingContent.findMany().withAccelerate();
     
     const content = {};
     sections.forEach(s => {
@@ -1991,7 +1969,7 @@ app.get('/api/admin/landing', authenticateToken, requireAdmin, async (req, res) 
       };
     });
     
-    const settings = await prisma.systemSettings.findMany();
+    const settings = await prisma.systemSettings.findMany().withAccelerate();
     const siteTitle = settings.find(s => s.key === 'siteTitle')?.value || 'New Band Fellowship';
     const logo = settings.find(s => s.key === 'logo')?.value || '';
     
@@ -2057,30 +2035,31 @@ app.get('/api/admin/requests', authenticateToken, requireAdmin, async (req, res)
       where.status = status;
     }
     
-    const requests = await prisma.songRequest.findMany({
-      where,
-      include: {
-        user: {
-          select: { id: true, firstName: true, lastName: true, email: true }
-        },
-        song: true,
-        votes: {
-          include: {
-            user: {
-              select: { id: true, firstName: true, lastName: true }
+    const [requests, total] = await Promise.all([
+      prisma.songRequest.findMany({
+        where,
+        include: {
+          user: {
+            select: { id: true, firstName: true, lastName: true, email: true }
+          },
+          song: true,
+          votes: {
+            include: {
+              user: {
+                select: { id: true, firstName: true, lastName: true }
+              }
             }
+          },
+          _count: {
+            select: { votes: true }
           }
         },
-        _count: {
-          select: { votes: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.songRequest.count({ where });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.songRequest.count({ where })
+    ]);
 
     res.json({
       items: requests.map(req => ({
@@ -2160,12 +2139,12 @@ app.get('/api/admin/playlist/:eventId', authenticateToken, requireAdmin, async (
           orderBy: { order: 'asc' }
         }
       }
-    });
+    }).withAccelerate();
     
     const sessions = await prisma.session.findMany({
       where: { eventId },
       orderBy: { order: 'asc' }
-    });
+    }).withAccelerate();
     
     console.log(`✅ Playlist found:`, playlist ? 'yes' : 'no');
     
@@ -2228,7 +2207,7 @@ app.post('/api/admin/playlist/:eventId/items', authenticateToken, requireAdmin, 
     // Get or create playlist
     let playlist = await prisma.playlist.findUnique({ 
       where: { eventId } 
-    });
+    }).withAccelerate();
     
     if (!playlist) {
       playlist = await prisma.playlist.create({
@@ -2413,23 +2392,24 @@ app.get('/api/admin/blogs', authenticateToken, requireAdmin, async (req, res) =>
     const { page = 1, limit = 10 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    const posts = await prisma.blogPost.findMany({
-      include: {
-        author: {
-          select: { id: true, firstName: true, lastName: true }
+    const [posts, total] = await Promise.all([
+      prisma.blogPost.findMany({
+        include: {
+          author: {
+            select: { id: true, firstName: true, lastName: true }
+          },
+          categories: true,
+          tags: true,
+          _count: {
+            select: { comments: true }
+          }
         },
-        categories: true,
-        tags: true,
-        _count: {
-          select: { comments: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.blogPost.count();
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.blogPost.count()
+    ]);
 
     res.json({
       items: posts.map(post => ({
@@ -2478,7 +2458,7 @@ app.post('/api/admin/blogs', authenticateToken, requireAdmin, async (req, res) =
     // Check if slug already exists
     let existingPost = await prisma.blogPost.findUnique({
       where: { slug }
-    });
+    }).withAccelerate();
     
     if (existingPost) {
       // Append timestamp to make slug unique
@@ -2678,7 +2658,7 @@ app.post('/api/admin/blogs/:id/unpublish', authenticateToken, requireAdmin, asyn
 // Get categories (admin)
 app.get('/api/admin/blogs/categories', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const categories = await prisma.category.findMany();
+    const categories = await prisma.category.findMany().withAccelerate();
     res.json(categories);
   } catch (error) {
     console.error('Error fetching categories:', error);
@@ -2692,21 +2672,22 @@ app.get('/api/admin/comments', authenticateToken, requireAdmin, async (req, res)
     const { page = 1, limit = 10 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
-    const comments = await prisma.comment.findMany({
-      include: {
-        user: {
-          select: { id: true, firstName: true, lastName: true }
+    const [comments, total] = await Promise.all([
+      prisma.comment.findMany({
+        include: {
+          user: {
+            select: { id: true, firstName: true, lastName: true }
+          },
+          post: {
+            select: { id: true, title: true }
+          }
         },
-        post: {
-          select: { id: true, title: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.comment.count();
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.comment.count()
+    ]);
 
     res.json({
       items: comments,
@@ -2812,22 +2793,23 @@ app.get('/api/admin/sessions', authenticateToken, requireAdmin, async (req, res)
       where.eventId = eventId;
     }
     
-    const sessions = await prisma.session.findMany({
-      where,
-      include: {
-        event: {
-          select: { id: true, title: true, eventDate: true }
-        }
-      },
-      orderBy: [
-        { eventId: 'asc' },
-        { order: 'asc' }
-      ],
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.session.count({ where });
+    const [sessions, total] = await Promise.all([
+      prisma.session.findMany({
+        where,
+        include: {
+          event: {
+            select: { id: true, title: true, eventDate: true }
+          }
+        },
+        orderBy: [
+          { eventId: 'asc' },
+          { order: 'asc' }
+        ],
+        skip,
+        take: parseInt(limit),
+      }).withAccelerate(),
+      prisma.session.count({ where })
+    ]);
 
     res.json({
       items: sessions,
@@ -2926,96 +2908,6 @@ app.delete('/api/admin/sessions/:id', authenticateToken, requireAdmin, async (re
   }
 });
 
-// ==================== TEAM MANAGEMENT ROUTES ====================
-
-// Get all team members (admin)
-app.get('/api/admin/team', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    const team = await prisma.teamMember.findMany({
-      orderBy: { order: 'asc' },
-      skip,
-      take: parseInt(limit),
-    });
-
-    const total = await prisma.teamMember.count();
-
-    res.json({
-      items: team,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching team:', error);
-    res.status(500).json({ message: 'Failed to fetch team' });
-  }
-});
-
-// Create team member
-app.post('/api/admin/team', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { name, role, bio, imageUrl, order, isActive } = req.body;
-    
-    if (!name || !role) {
-      return res.status(400).json({ message: 'Name and role are required' });
-    }
-    
-    const member = await prisma.teamMember.create({
-      data: {
-        name,
-        role,
-        bio: bio || null,
-        imageUrl: imageUrl || null,
-        order: order || 0,
-        isActive: isActive ?? true,
-      }
-    });
-    
-    res.status(201).json(member);
-  } catch (error) {
-    console.error('Error creating team member:', error);
-    res.status(500).json({ message: 'Failed to create team member' });
-  }
-});
-
-// Update team member
-app.patch('/api/admin/team/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = req.body;
-    
-    const member = await prisma.teamMember.update({
-      where: { id },
-      data: updates,
-    });
-    
-    res.json(member);
-  } catch (error) {
-    console.error('Error updating team member:', error);
-    res.status(500).json({ message: 'Failed to update team member' });
-  }
-});
-
-// Delete team member
-app.delete('/api/admin/team/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    await prisma.teamMember.delete({ where: { id } });
-    
-    res.json({ message: 'Team member deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting team member:', error);
-    res.status(500).json({ message: 'Failed to delete team member' });
-  }
-});
-
 // ==================== SUPER ADMIN ROUTES ====================
 
 // Get all admins
@@ -3038,7 +2930,7 @@ app.get('/api/admin/super/admins', authenticateToken, requireSuperAdmin, async (
         createdAt: true,
       },
       orderBy: { createdAt: 'desc' }
-    });
+    }).withAccelerate();
     
     res.json(admins);
   } catch (error) {
@@ -3052,7 +2944,10 @@ app.post('/api/admin/super/admins', authenticateToken, requireSuperAdmin, async 
   try {
     const { email, password, firstName, lastName, phone } = req.body;
     
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser = await prisma.user.findUnique({ 
+      where: { email } 
+    }).withAccelerate();
+    
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -3109,6 +3004,7 @@ app.get('/api/admin/super/logs', authenticateToken, requireSuperAdmin, async (re
   try {
     const { page = 1, limit = 50 } = req.query;
     
+    // This is a placeholder - implement actual log fetching if needed
     res.json({
       items: [],
       pagination: {
@@ -3135,7 +3031,7 @@ app.get('/api/debug/user-requests', authenticateToken, async (req, res) => {
         user: true,
         song: true
       }
-    });
+    }).withAccelerate();
     
     res.json({
       userId: req.user.id,
@@ -3251,24 +3147,17 @@ app.use('*', (req, res) => {
   });
 });
 
-// ==================== SERVER START ====================
+// ==================== EXPORT FOR VERCEL ====================
 
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`📍 API available at http://localhost:${PORT}/api`);
-  console.log(`📍 Test endpoint: http://localhost:${PORT}/api/test`);
-  console.log(`📍 Public events: http://localhost:${PORT}/api/public/events`);
-  console.log(`📍 Admin events: http://localhost:${PORT}/api/admin/events`);
-  console.log(`📍 Songs API: http://localhost:${PORT}/api/songs/master`);
-  console.log(`📍 Song requests: http://localhost:${PORT}/api/songs/requests`);
-});
-
+// Export the Express app for Vercel
 module.exports = app;
 
-// Keep your local development server
+// For local development only
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`📍 API available at http://localhost:${PORT}/api`);
+    console.log(`📍 Test endpoint: http://localhost:${PORT}/api/test`);
   });
 }
