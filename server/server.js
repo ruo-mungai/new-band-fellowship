@@ -3262,3 +3262,13 @@ app.listen(PORT, () => {
   console.log(`📍 Songs API: http://localhost:${PORT}/api/songs/master`);
   console.log(`📍 Song requests: http://localhost:${PORT}/api/songs/requests`);
 });
+
+module.exports = app;
+
+// Keep your local development server
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
