@@ -1,13 +1,11 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { HelmetProvider } from 'react-helmet-async';
-import { useAuth } from './contexts/AuthContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import Loader from './components/common/Loader';
-
 
 // Layouts
 import MainLayout from './layouts/MainLayout';
@@ -52,6 +50,9 @@ import SystemSettings from './pages/admin/SystemSettings';
 import ManageAdmins from './pages/admin/SuperAdmin/ManageAdmins';
 import SystemLogs from './pages/admin/SuperAdmin/SystemLogs';
 
+// Import useAuth for AppContent
+import { useAuth } from './contexts/AuthContext';
+
 // Loading wrapper component
 function AppContent() {
   const { loading } = useAuth();
@@ -68,7 +69,6 @@ function AppContent() {
     <Routes>
       {/* ALL PUBLIC ROUTES - NO LOGIN REQUIRED */}
       <Route element={<MainLayout />}>
-        {/* Public Pages - Anyone can access */}
         <Route path="/" element={<HomePage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/blogs" element={<BlogsPage />} />
@@ -80,18 +80,17 @@ function AppContent() {
         <Route path="/songs/:songId" element={<SongLyricsPage />} />
         <Route path="/songs/:songId/playlist/:playlistId" element={<SongLyricsPage />} />
         <Route path="/songs/:songId/playlist/:playlistId/event/:eventId" element={<SongLyricsPage />} />
-         <Route path="/donate" element={<DonationsPage />} />
+        <Route path="/donate" element={<DonationsPage />} />
       </Route>
-     
 
-      {/* Auth Routes - for non-authenticated users */}
+      {/* Auth Routes */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Route>
 
-      {/* Protected User Routes - Login Required */}
+      {/* Protected User Routes */}
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<UserDashboardPage />} />
@@ -101,7 +100,7 @@ function AppContent() {
         </Route>
       </Route>
 
-      {/* Admin Routes - Admin Only */}
+      {/* Admin Routes */}
       <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']} />}>
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<AdminDashboard />} />
@@ -161,7 +160,6 @@ function App() {
               }}
             />
             <AppContent />
-            
           </Router>
         </AuthProvider>
       </ThemeProvider>

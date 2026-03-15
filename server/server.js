@@ -10,6 +10,7 @@ const fs = require('fs');
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 5000;
+const DATABASE_URL = process.env.DATABASE_URL;
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
